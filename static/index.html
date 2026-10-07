@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TD Station · AI 中转站</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1c2230; --line: #2d333b;
+    --text: #e6edf3; --dim: #8b949e; --accent: #4f8cff; --ok: #3fb950; --warn: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.6 "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 10; }
+  .logo { font-size: 18px; font-weight: 700; } .logo span { color: var(--accent); }
+  .wallet { display: flex; align-items: center; gap: 10px; }
+  .bal { font-size: 13px; color: var(--dim); }
+  .bal b { color: var(--ok); }
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; cursor: pointer; font-size: 13px; }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .tabs { display: flex; gap: 4px; padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .tab { padding: 8px 18px; border-radius: 8px; cursor: pointer; color: var(--dim); }
+  .tab.active { background: var(--panel2); color: var(--text); }
+  main { max-width: 900px; margin: 0 auto; padding: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .row { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+  select, input[type=text], input[type=number], textarea {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; font-size: 13px; outline: none; flex: 1; min-width: 120px;
+  }
+  textarea { min-height: 90px; resize: vertical; font-family: inherit; }
+  label { font-size: 12px; color: var(--dim); white-space: nowrap; }
+  .msgs { height: 380px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: var(--panel2); }
+  .msg { margin-bottom: 10px; }
+  .msg .who { font-size: 12px; color: var(--dim); margin-bottom: 2px; }
+  .msg .txt { white-space: pre-wrap; word-break: break-word; }
+  .msg.user .txt { color: var(--accent); }
+  .empty { color: var(--dim); text-align: center; padding: 60px 0; }
+  .img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .img-grid img { width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+  video { width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+  .hint { font-size: 12px; color: var(--dim); }
+  .tag { display: inline-block; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; font-size: 12px; margin: 3px; color: var(--dim); }
+  .err { color: var(--warn); }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1f2328; border: 1px solid var(--line); color: var(--text); padding: 10px 20px; border-radius: 10px; display: none; z-index: 99; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">TD <span>Station</span> · AI 中转站</div>
+  <div class="wallet">
+    <span class="bal" id="balText">未连接钱包</span>
+    <button id="authBtn" onclick="connectWallet()">连接 Token 钱包</button>
+    <button class="ghost hidden" id="logoutBtn" onclick="logout()">断开</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-t="chat" onclick="switchTab('chat')">对话</div>
+  <div class="tab" data-t="img" onclick="switchTab('img')">图片</div>
+  <div class="tab" data-t="vid" onclick="switchTab('vid')">视频</div>
+  <div class="tab" data-t="pay" onclick="switchTab('pay')">钱包</div>
+  <div class="tab" data-t="models" onclick="switchTab('models')">模型</div>
+</div>
+
+<main>
+  <!-- 对话 -->
+  <section id="t-chat">
+    <div class="card">
+      <div class="row">
+        <label>模型</label>
+        <select id="chatModel"></select>
+      </div>
+      <div class="msgs" id="chatMsgs"><div class="empty">连接 Token 钱包后即可开始对话</div></div>
+      <div class="row" style="margin-top:12px">
+        <textarea id="chatInput" placeholder="输入消息，Enter 发送 / Shift+Enter 换行"></textarea>
+        <button id="sendBtn" onclick="sendChat()">发送</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 图片 -->
+  <section id="t-img" class="hidden">
+    <div class="card">
+      <div class="row">
+        <label>模型</label><select id="imgModel"></select>
+        <label>尺寸</label><select id="imgSize">
+          <option>1024x1024</option><option>768x768</option><option>512x512</option>
+          <option>1024x768</option><option>768x1024</option>
+        </select>
+      </div>
+      <div class="row">
+        <textarea id="imgPrompt" placeholder="描述你想生成的图片…"></textarea>
+        <button id="imgBtn" onclick="genImage()">生成</button>
+      </div>
+      <div class="img-grid" id="imgGrid"></div>
+    </div>
+  </section>
+
+  <!-- 视频 -->
+  <section id="t-vid" class="hidden">
+    <div class="card">
+      <div class="row">
+        <label>模型</label><select id="vidModel"></select>
+        <label>风格</label><select id="vidStyle"><option>general</option><option>anime</option><option>realistic</option></select>
+      </div>
+      <div class="row">
+        <textarea id="vidPrompt" placeholder="描述视频内容，如：海上日出，镜头缓缓拉近…"></textarea>
+        <button id="vidBtn" onclick="genVideo()">生成视频</button>
+      </div>
+      <div class="hint" id="vidStatus"></div>
+      <div id="vidResult" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <!-- 钱包 -->
+  <section id="t-pay" class="hidden">
+    <div class="card">
+      <h3 style="margin-bottom:12px">Token 钱包</h3>
+      <p class="hint">通过 TokenDance OAuth 授权，用户用自己的 Token 余额支付模型调用；调用自动归因到本应用（X-App-URL），用于黑客松真实数据统计。</p>
+      <div class="row" style="margin-top:12px">
+        <label>余额</label><span id="payBal">-</span>
+      </div>
+      <div class="row">
+        <label>充值金额（元）</label>
+        <input type="number" id="payAmount" value="10" min="1" max="100000" style="flex:0 0 140px">
+        <button onclick="createPay()">生成支付二维码</button>
+      </div>
+      <div id="payQr"></div>
+      <div id="payStatus"></div>
+    </div>
+  </section>
+
+  <!-- 模型 -->
+  <section id="t-models" class="hidden">
+    <div class="card">
+      <h3 style="margin-bottom:12px">模型目录（来自 TokenDance 实时接口）</h3>
+      <div id="modelList"></div>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+<script>
+let models = { chat: [], image: [], video: [] };
+const $ = id => document.getElementById(id);
+
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 2600); }
+
+function switchTab(t) {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.dataset.t === t));
+  ['chat','img','vid','pay','models'].forEach(k => $('t-' + k).classList.toggle('hidden', k !== t));
+}
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || ('请求失败 ' + r.status)); }
+  return r.json();
+}
+
+async function loadModels() {
+  try {
+    models = await api('/api/models');
+    fillSelect('chatModel', models.chat, 'glm-5');
+    fillSelect('imgModel', models.image, '');
+    fillSelect('vidModel', models.video, '');
+    renderModels();
+  } catch (e) { toast('模型目录加载失败: ' + e.message); }
+}
+function fillSelect(id, list, def) {
+  const s = $(id); s.innerHTML = '';
+  list.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; s.appendChild(o); });
+  if (def && list.some(m => m.id === def)) s.value = def;
+}
+function renderModels() {
+  $('modelList').innerHTML = ['chat','image','video'].map(k =>
+    `<div style="margin-bottom:10px"><b>${k === 'chat' ? '对话' : k === 'image' ? '图片' : '视频'}</b><br>` +
+    models[k].map(m => `<span class="tag">${m.name}</span>`).join('') + '</div>'
+  ).join('');
+}
+
+async function refreshAuth() {
+  try {
+    const st = await api('/api/auth/status');
+    if (st.connected) { $('authBtn').textContent = '已连接'; $('authBtn').style.opacity = .6; $('logoutBtn').classList.remove('hidden'); refreshBalance(); }
+    else { $('authBtn').textContent = '连接 Token 钱包'; $('authBtn').style.opacity = 1; $('logoutBtn').classList.add('hidden'); }
+  } catch (e) {}
+}
+async function refreshBalance() {
+  try { const b = await api('/api/balance'); $('balText').innerHTML = `余额 <b>¥${b.balance.toFixed(2)}</b>（总额 ¥${b.credits.toFixed(2)}，已用 ¥${b.used.toFixed(2)}）`; $('payBal').textContent = `¥${b.balance.toFixed(2)}`; }
+  catch (e) { $('balText').textContent = '余额获取失败'; }
+}
+
+async function connectWallet() {
+  try { const d = await api('/api/auth/start'); location.href = d.url; }
+  catch (e) { toast('发起授权失败: ' + e.message); }
+}
+async function logout() { await api('/api/auth/logout', { method: 'POST' }); refreshAuth(); }
+
+/* ---- 对话（流式） ---- */
+let abortCtrl = null;
+async function sendChat() {
+  const input = $('chatInput'); const txt = input.value.trim(); if (!txt) return;
+  const model = $('chatModel').value; if (!model) return toast('没有可用对话模型');
+  const box = $('chatMsgs'); const empty = box.querySelector('.empty'); if (empty) empty.remove();
+  box.insertAdjacentHTML('beforeend', `<div class="msg user"><div class="who">你</div><div class="txt"></div></div>`);
+  box.lastElementChild.querySelector('.txt').textContent = txt;
+  box.insertAdjacentHTML('beforeend', `<div class="msg"><div class="who">AI</div><div class="txt"></div></div>`);
+  const aiEl = box.lastElementChild.querySelector('.txt');
+  input.value = ''; $('sendBtn').disabled = true;
+  try {
+    const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: txt }], stream: true }) });
+    if (!r.ok) throw new Error((await r.json()).error || ('HTTP ' + r.status));
+    const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '';
+    while (true) {
+      const { done, value } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i; while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim(); if (data === '[DONE]') continue;
+        try { const j = JSON.parse(data); if (j.choices?.[0]?.delta?.content) aiEl.textContent += j.choices[0].delta.content; } catch (e) {}
+      }
+    }
+    box.scrollTop = box.scrollHeight;
+  } catch (e) { aiEl.textContent = '[错误] ' + e.message; }
+  $('sendBtn').disabled = false;
+}
+
+/* ---- 图片 ---- */
+async function genImage() {
+  const prompt = $('imgPrompt').value.trim(); if (!prompt) return toast('请输入图片描述');
+  $('imgBtn').disabled = true;
+  try {
+    const d = await api('/api/image', { method: 'POST', body: JSON.stringify({ model: $('imgModel').value, prompt, n: 1, size: $('imgSize').value }) });
+    const urls = (d.data || []).map(x => x.url).filter(Boolean);
+    const b64 = (d.data || []).map(x => x.b64_json).filter(Boolean);
+    $('imgGrid').innerHTML = urls.map(u => `<img src="${u}">`).join('') +
+      b64.map(b => `<img src="data:image/png;base64,${b}">`).join('');
+    if (!urls.length && !b64.length) toast('未返回图片数据');
+  } catch (e) { toast('生成失败: ' + e.message); }
+  $('imgBtn').disabled = false;
+}
+
+/* ---- 视频（异步轮询） ---- */
+let vidTimer = null;
+async function genVideo() {
+  const prompt = $('vidPrompt').value.trim(); if (!prompt) return toast('请输入视频描述');
+  $('vidBtn').disabled = true; $('vidResult').innerHTML = ''; $('vidStatus').textContent = '提交中…';
+  try {
+    const d = await api('/api/video', { method: 'POST', body: JSON.stringify({ model: $('vidModel').value, style: $('vidStyle').value, prompt }) });
+    const taskId = d.task_id || d.id;
+    if (!taskId) return toast('未获取到任务 ID: ' + JSON.stringify(d));
+    $('vidStatus').textContent = `任务 ${taskId} 生成中，约 1-3 分钟…`;
+    clearInterval(vidTimer);
+    vidTimer = setInterval(async () => {
+      try {
+        const s = await api('/api/video/status?task_id=' + taskId);
+        const creations = s.creations || s.data || [];
+        if (creations.length) {
+          clearInterval(vidTimer); $('vidBtn').disabled = false;
+          $('vidStatus').textContent = '生成完成';
+          $('vidResult').innerHTML = creations.map(c => c.url ? `<video controls src="${c.url}"></video>` : '').join('');
+        }
+      } catch (e) { $('vidStatus').textContent = '查询失败: ' + e.message; }
+    }, 5000);
+  } catch (e) { toast('提交失败: ' + e.message); $('vidBtn').disabled = false; }
+}
+
+/* ---- 充值 ---- */
+async function createPay() {
+  const amount = parseInt($('payAmount').value) || 10;
+  try {
+    const d = await api('/api/pay', { method: 'POST', body: JSON.stringify({ amount }) });
+    const sess = d.session;
+    if (!sess) return toast('创建会话失败');
+    $('payQr').innerHTML = `<p class="hint">PC 端扫描下方二维码支付（金额 ¥${sess.amount}）：</p>
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(sess.payment_url)}" style="margin:10px 0;border-radius:8px">
+      <p class="hint">移动端：<a href="${sess.alipay_url || '#'}" style="color:var(--accent)">点击唤起支付宝</a></p>`;
+    clearInterval(vidTimer);
+    const pid = setInterval(async () => {
+      try {
+        const s = await api('/api/pay/status/' + sess.id);
+        $('payStatus').textContent = '状态: ' + (s.session ? s.session.status : JSON.stringify(s));
+        if (s.session && s.session.status === 'paid') { clearInterval(pid); $('payStatus').textContent = '支付成功，余额已到账'; refreshBalance(); }
+        if (s.session && ['failed','closed','refunded'].includes(s.session.status)) clearInterval(pid);
+      } catch (e) {}
+    }, 3000);
+  } catch (e) { toast('创建充值失败: ' + e.message); }
+}
+
+$('chatInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+});
+
+refreshAuth(); loadModels();
+</script>
+</body>
+</html>
